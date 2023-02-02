@@ -4,6 +4,7 @@ import { createServer, RtspRequest, RtspResponse, RtspServer } from 'rtsp-server
 import { Mount } from './Mount';
 import { Mounts } from './Mounts';
 import { getDebugger } from './utils';
+const axios = require('axios');
 
 const debug = getDebugger('PublishServer');
 
@@ -137,14 +138,55 @@ export class PublishServer {
       // If the mount already exists, reject
       if (mount) {
         debug('%s:%s - Mount already existed, sending 503: %o', req.socket.remoteAddress, req.socket.remotePort, req.uri);
-        res.statusCode = 503;
-        return res.end();
+//         res.statusCode = 503;
+//         return res.end();
+                this.mounts.deleteMount(req.uri);
       }
 
       mount = this.mounts.addMount(req.uri, sdpBody, this.hooks);
       res.setHeader('Session', `${mount.id};timeout=30`);
       debug('%s:%s - Set session to %s', req.socket.remoteAddress, req.socket.remotePort, mount.id);
 
+         try {
+        // Add this new mount to rtsp live555
+        let URL = req.uri;
+        let URLsplit = URL.split('/');
+        let host = URLsplit[0] + "//" + URLsplit[2] + "/";
+        let newURL = URL.replace(host, '0.0.0.0:9001');
+
+        let addResult = await axios({
+          url: 'http://0.0.0.0:1234/add_stream',
+          headers: {},
+          data: {
+            "input_url": newURL
+          },
+          method: 'POST'
+        });
+        console.log(addResult.data);
+        if (addResult.data.streamID != null) {
+          addResult = await axios({
+            url: 'http://0.0.0.0:1234/remove_stream',
+            headers: {},
+            data: {
+              "stream_id": addResult.data.streamID
+            },
+            method: 'POST'
+          });
+          console.log(addResult.data)
+          addResult = await axios({
+            url: 'http://0.0.0.0:1234/add_stream',
+            headers: {},
+            data: {
+              "input_url": newURL
+            },
+            method: 'POST'
+          });
+          console.log(addResult.data);
+        }
+      } catch (error) {
+        console.log(error)
+      }
+      
       res.end();
     });
   }
